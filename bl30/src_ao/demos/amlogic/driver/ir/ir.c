@@ -29,6 +29,7 @@
 #include "util.h"
 #include "projdefs.h"
 #include "portmacro.h"
+#include <string.h>
 
 #include <unistd.h>
 #include "n200_func.h"
@@ -39,8 +40,8 @@
 #include "ir_drv.h"
 
 static uint8_t ucIsDebugEnable;
-static IRPowerKey_t prvKeyCodeList[MAX_KEY_NUM] = {};
-static uint32_t key_cnt;
+static IRPowerKey_t prvDefWakeupList[MAX_KEY_NUM];
+static uint8_t ucDefWakeupNum;
 
 #define IRDebug(fmt, x...)						\
 do {									\
@@ -161,6 +162,8 @@ static void prvCheckPowerKey(void)
 	/* search power key list */
 	for ( ;ucIndex < xDrvData->ucPowerKeyNum; ucIndex++)
 		if (ulPowerKeyList[ucIndex].code == xDrvData->ulFrameCode) {
+			xDrvData->ulLastPowerKey = xDrvData->ulFrameCode;
+			xDrvData->ulWakeupKey = xDrvData->ulFrameCode;
 			iprintf("receive the right power key:0x%x\n",
 				xDrvData->ulFrameCode);
 			if (xDrvData->vIRHandler)
@@ -228,12 +231,12 @@ void vIRInit(uint16_t usWorkMode, uint16_t usGpio, enum PinMuxType func,
 		return;
 	}
 
-	if (ulPowerKeyList == NULL || !ucPowerKeyNum) {
+	if (!ucDefWakeupNum && (ulPowerKeyList == NULL || !ucPowerKeyNum)) {
 		IRError("not set power key list, ir init failed\n");
 		return;
 	}
 
-	if (xPinmuxSet(usGpio, func)) {
+	if (func != PIN_FUNC_INVALID && xPinmuxSet(usGpio, func)) {
 		IRError("pin mux setting error\n");
 		return;
 	}
@@ -241,8 +244,15 @@ void vIRInit(uint16_t usWorkMode, uint16_t usGpio, enum PinMuxType func,
 	xDrvData = pGetIRDrvData();
 	vInitIRWorkMode(usWorkMode);
 
-	xDrvData->ulPowerKeyList = ulPowerKeyList;
-	xDrvData->ucPowerKeyNum = ucPowerKeyNum;
+	if (ucDefWakeupNum) {
+		xDrvData->ulPowerKeyList = prvDefWakeupList;
+		xDrvData->ucPowerKeyNum = ucDefWakeupNum;
+	} else {
+		xDrvData->ulPowerKeyList = ulPowerKeyList;
+		xDrvData->ucPowerKeyNum = ucPowerKeyNum;
+	}
+	xDrvData->ulLastPowerKey = 0;
+	xDrvData->ulWakeupKey = 0;
 	xDrvData->ucCurWorkMode = usWorkMode;
 	xDrvData->vIRHandler = vIRHandler;
 
@@ -256,6 +266,9 @@ void vIRDeint(void)
 {
 	struct xIRDrvData *xDrvData;
 
+	if (!ucIsIRInit())
+		return;
+
 	xDrvData = pGetIRDrvData();
 
 	xDrvData->ucIsInit = 0;
@@ -265,35 +278,45 @@ void vIRDeint(void)
 	UnRegisterIrq(IRQ_NUM_IRIN);
 }
 
-void vIRGetKeyCode(IRPowerKey_t *PowerKeyList)
-{
-	IRPowerKey_t *Keydest = PowerKeyList;
-	IRPowerKey_t *KeyList = prvKeyCodeList;
-
-	while (key_cnt--)
-		*Keydest++ = *KeyList++;
-}
-
 static void *prvIRGetInfo(void *msg)
 {
+	uint8_t i;
+	uint32_t cmd = *(uint32_t *)msg;
+	uint32_t *data = (uint32_t *)msg + 1;
+	struct xIRDrvData *xDrvData = pGetIRDrvData();
 
-	uint32_t key_num, i;
-	uint32_t *key_code, *key_type;
-	key_num = *(u32 *)msg;
-	key_code = ((u32 *)msg) + 1;
-	key_type = ((u32 *)msg) + key_num / 2 + 1;
-
-	for (i = 0; i < key_num / 2; i++) {
-		prvKeyCodeList[i].code = *key_code;
-		prvKeyCodeList[i].type = *key_type;
-		key_code++;
-		key_type++;
+	switch (cmd) {
+	case IR_MBOX_CMD_SET_DEBUG_LOG:
+		ucIsDebugEnable = data[0];
+		break;
+	case IR_MBOX_CMD_SET_WAKEUP_LIST:
+		if (data[0] > MAX_KEY_NUM)
+			break;
+		ucDefWakeupNum = data[0];
+		for (i = 0; i < ucDefWakeupNum; i++) {
+			prvDefWakeupList[i].type = (data[1] >> i) & 0x1;
+			prvDefWakeupList[i].code = data[i + 2];
+		}
+		break;
+	case IR_MBOX_CMD_GET_WAKEUP_KEY:
+		memset(msg, 0, MBOX_BUF_LEN);
+		*(uint32_t *)msg = xDrvData->ulWakeupKey;
+		xDrvData->ulWakeupKey = 0;
+		break;
+	case IR_MBOX_CMD_SET_STATUS:
+		if (data[0])
+			vIRInit(MODE_HARD_NEC, 0, PIN_FUNC_INVALID, NULL, 0, NULL);
+		else
+			vIRDeint();
+		break;
+	case IR_MBOX_CMD_GET_PREBOOT_KEY:
+		memset(msg, 0, MBOX_BUF_LEN);
+		*(uint32_t *)msg = xDrvData->ulLastPowerKey;
+		break;
+	default:
+		break;
 	}
-
-	key_cnt = i;
 	return NULL;
-
-
 }
 
 void vIRMailboxEnable(void)
@@ -307,4 +330,3 @@ void vIRMailboxEnable(void)
 		return;
 	}
 }
-
