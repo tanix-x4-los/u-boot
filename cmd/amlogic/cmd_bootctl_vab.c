@@ -149,7 +149,7 @@ typedef struct slot_metadata {
 	uint8_t verity_corrupted : 1;
 	// Reserved for further use.
 	uint8_t reserved : 7;
-} slot_metadata;
+} __attribute__((packed)) slot_metadata;
 
 enum UpdateState {
 	None = 0,
@@ -193,7 +193,7 @@ typedef struct bootloader_control {
 	// CRC32 of all 28 bytes preceding this field (little endian
 	// format).
 	uint32_t crc32_le;
-}bootloader_control;
+} __attribute__((packed)) bootloader_control;
 
 #define MISC_VIRTUAL_AB_MESSAGE_VERSION 2
 #define MISC_VIRTUAL_AB_MAGIC_HEADER 0x56740AB0
