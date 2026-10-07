@@ -1,0 +1,78 @@
+/dts-v1/;
+
+/* SPDX-License-Identifier: GPL-2.0+ OR MIT
+ * Tanix X4 S905X4 U-Boot control tree, based on the SC2 AH212 reference.
+ * DDR training uses the hardware-validated stock DDR3 tables in timing.c.
+ */
+
+#include "meson-sc2-s905x4-ah212.dtsi"
+#include "meson-sc2_skt-panel.dtsi"
+
+/ {
+	compatible = "tanix,x4", "amlogic,sc2-s905x4-ah212", "amlogic,s905x4", "amlogic,meson-sc2";
+	model = "Tanix X4 (Amlogic S905X4)";
+
+	chosen {
+		stdout-path = "serial0:921600n8";
+	};
+
+	/* HDMI driver reads this policy from the U-Boot control tree. */
+	amhdmitx {
+		compatible = "amlogic, amhdmitx-sc2";
+		status = "okay";
+		res_1080p = "0";
+	};
+
+	cvbsout {
+		compatible = "amlogic, cvbsout-sc2";
+		status = "okay";
+		sva_std = <0>;
+
+		performance_pal = <0xff006fc0  0x3 /* 0x1bf0 << 2 + 0xff000000 */
+			0xff006c48  0x8060 /* 0x1b12 */
+			0xff006c14  0xf9 /* 0x1b05 */
+			0xff006d58  0x333 /* 0x1b56 */
+			0xff007164  0xf15e /* 0x1c59 */
+			0xffff  0x0>; /* ending flag */
+		performance = <0xff006fc0  0x3 /* 0x1bf0 */
+			0xff006c48  0x8080 /* 0x1b12 */
+			0xff006c14  0xfc /* 0x1b05 */
+			0xff006d58  0x333 /* 0x1b56 */
+			0xff007164  0xf458 /* 0x1c59 */
+			0xffff  0x0>; /* ending flag */
+		performance_ntsc = <0xff006fc0  0x3 /* 0x1bf0 << 2 + 0xff000000 */
+			0xff006c48  0x8180 /* 0x1b12 */
+			0xff006c14  0xf0 /* 0x1b05 */
+			0xff006d58  0x333 /* 0x1b56 */
+			0xff007164  0xed66 /* 0x1c59 */
+			0xffff  0x0>; /* ending flag */
+	};
+};
+
+/* Console UART on the 4-pad pinhole header (GND/RX/TX/VCC) */
+&uart_a {
+	status = "okay";
+};
+
+&uart_b {
+	status = "okay";
+};
+
+&saradc {
+	status = "okay";
+};
+
+&i2c3 {
+	status = "disabled";
+	clock-frequency = <100000>;
+};
+
+&pinctrl_periphs {
+	bl_pwm_off_pins:bl_pwm_off_pin {
+		mux {
+			groups = "GPIOH_5";
+			function = "gpio_periphs";
+			output-high;
+		};
+	};
+};
