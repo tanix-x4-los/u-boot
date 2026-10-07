@@ -17,6 +17,10 @@
 extern efuse_obj_field_t efuse_field;
 #endif//#ifdef CONFIG_EFUSE_OBJ_API
 
+#ifdef CONFIG_SC2_X4
+static struct storage_t *x4_emmc_storage_dev;
+#endif
+
 #define USER_PARTITION 0
 #define BOOT0_PARTITION 1
 #define BOOT1_PARTITION 2
@@ -1075,6 +1079,9 @@ int emmc_pre(void)
 			return ret;
 		}
 		config_storage_dev_func(storage_dev, mmc);
+#ifdef CONFIG_SC2_X4
+		x4_emmc_storage_dev = storage_dev;
+#endif
 		store_register(storage_dev);
 		printf("emmc init success!\n");
 	} else
@@ -1091,6 +1098,12 @@ int emmc_probe(uint32_t init_flag)
 		printf("mmc init failed ret:%x\n", ret);
 		goto exit_error;
 	}
+#ifdef CONFIG_SC2_X4
+	/* pre-scan occurs before capacity and block size are known. */
+	if (x4_emmc_storage_dev)
+		config_storage_dev_func(x4_emmc_storage_dev,
+					find_mmc_device(STORAGE_EMMC));
+#endif
 	printf("emmc probe success\n");
 
 exit_error:

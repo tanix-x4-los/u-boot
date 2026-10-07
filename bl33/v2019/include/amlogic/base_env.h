@@ -14,6 +14,15 @@
 #define CONFIG_DTB_LOAD  "imgread dtb _aml_dtb ${dtb_mem_addr}"
 #endif//#ifdef CONFIG_DTB_BIND_KERNEL	//load dtb from kernel, such as boot partition
 
+/* Factory provisioning can format its partition on init. X4 normal boot
+ * must not initialize manufacturing storage automatically.
+ */
+#ifdef CONFIG_SC2_X4
+#define CONFIG_FACTORY_PROVISION_INIT_ENV ""
+#else
+#define CONFIG_FACTORY_PROVISION_INIT_ENV "factory_provision init;"
+#endif
+
 /* args/envs */
 #define CONFIG_SYS_MAXARGS  64
 #define CONFIG_EXTRA_ENV_SETTINGS_BASE \
@@ -247,7 +256,7 @@
 		"setenv bootconfig ${bootconfig} androidboot.wificountrycode=${region_code};"\
 		"setenv bootconfig ${bootconfig} androidboot.serialno=${usid};"\
 		"setenv serial ${usid}; setenv serial# ${usid};"\
-	    "factory_provision init;"\
+	    CONFIG_FACTORY_PROVISION_INIT_ENV\
 		"\0"\
 
 #endif

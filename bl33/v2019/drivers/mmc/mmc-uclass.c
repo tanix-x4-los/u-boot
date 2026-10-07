@@ -5,6 +5,9 @@
  */
 
 #include <common.h>
+#ifdef CONFIG_SC2_X4
+#include <amlogic/x4_boot.h>
+#endif
 #include <mmc.h>
 #include <dm.h>
 #include <dm/device-internal.h>
@@ -19,6 +22,14 @@ int dm_mmc_send_cmd(struct udevice *dev, struct mmc_cmd *cmd,
 	struct dm_mmc_ops *ops = mmc_get_ops(dev);
 	int ret;
 
+#ifdef CONFIG_SC2_X4
+	if (x4_usb_ram_boot() &&
+	    ((data && (data->flags & MMC_DATA_WRITE)) ||
+	     cmd->cmdidx == MMC_CMD_ERASE)) {
+		puts("X4 USB RAM validation: refusing MMC write/erase\n");
+		return -EROFS;
+	}
+#endif
 	mmmc_trace_before_send(mmc, cmd);
 	if (ops->send_cmd)
 		ret = ops->send_cmd(dev, cmd, data);

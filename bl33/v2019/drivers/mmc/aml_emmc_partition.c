@@ -1425,6 +1425,31 @@ int mmc_device_init (struct mmc *mmc)
 	}
 	apt_info("inh count %d\n",  iptbl_inh.count);
 
+#ifdef CONFIG_SC2_X4
+	ret = get_ept_from_gpt(mmc);
+	if (!ret) {
+		part_init(mmc_get_blk_desc(mmc));
+		return 0;
+	}
+	ret = _zalloc_iptbl(&p_iptbl_rsv);
+	if (ret)
+		goto _out;
+	ret = get_ptbl_rsv(mmc, p_iptbl_rsv);
+	if (!ret && p_iptbl_rsv->count) {
+		ret = _cpy_iptbl(p_iptbl_ept, p_iptbl_rsv);
+		if (!ret) {
+			_update_part_tbl(p_iptbl_ept->partitions, p_iptbl_ept->count);
+			part_init(mmc_get_blk_desc(mmc));
+			puts("X4: using existing reserved partition table; no layout writes\n");
+		}
+	} else {
+		puts("X4: no valid on-disk partition table; refusing automatic creation\n");
+		ret = -EINVAL;
+	}
+	_free_iptbl(p_iptbl_rsv);
+	return ret;
+#endif
+
 	ret = get_ept_from_gpt(mmc);
 	if (!ret) {
 #ifdef CONFIG_AML_PARTITION

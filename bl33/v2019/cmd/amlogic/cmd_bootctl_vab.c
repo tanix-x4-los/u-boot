@@ -314,7 +314,7 @@ void dump_boot_info(bootloader_control* boot_ctrl)
 #endif
 }
 
-static bool slot_is_bootable(slot_metadata* slot) {
+static bool __maybe_unused slot_is_bootable(slot_metadata* slot) {
 	return slot->tries_remaining != 0;
 }
 
@@ -331,7 +331,7 @@ int get_active_slot(bootloader_control* info) {
 	}
 }
 
-static bool slot_is_bootable_normalAB(AvbABSlotData* slot) {
+static bool __maybe_unused slot_is_bootable_normalAB(AvbABSlotData* slot) {
   return slot->priority > 0 &&
 		 (slot->successful_boot || (slot->tries_remaining > 0));
 }
@@ -448,7 +448,7 @@ bool boot_info_save(bootloader_control *info, char *miscbuf)
 	return true;
 }
 
-static int is_BootSame(int srcindex, int dstindex)
+static int __maybe_unused is_BootSame(int srcindex, int dstindex)
 {
 	int iRet = 0;
 	int ret = -1;
@@ -551,12 +551,174 @@ exit:
 	return ret;
 }
 
+#ifdef CONFIG_SC2_X4
+/* Slot selection is read-only and independent of bootloader copies.
+ * Accept both AOSP boot-control and older AVB A/B metadata, checking CRC.
+ */
+static int x4_load_boot_control(bootloader_control *ctrl, char *miscbuf)
+{
+	AvbABData old;
+	int i;
+
+	if (store_read("misc", 0, MISCBUF_SIZE, miscbuf))
+		return -EIO;
+	memcpy(ctrl, miscbuf + AB_METADATA_MISC_PARTITION_OFFSET, sizeof(*ctrl));
+	if (ctrl->magic == BOOT_CTRL_MAGIC &&
+	    ctrl->version == BOOT_CTRL_VERSION && ctrl->nb_slot == 2 &&
+	    le32_to_cpu(ctrl->crc32_le) == vab_crc32((void *)ctrl, 28))
+		return 0;
+
+	memcpy(&old, miscbuf + AB_METADATA_MISC_PARTITION_OFFSET, sizeof(old));
+	if (!memcmp(old.magic, AVB_AB_MAGIC, AVB_AB_MAGIC_LEN) &&
+	    old.version_major <= AVB_AB_MAJOR_VERSION &&
+	    be32_to_cpu(old.crc32) == vab_crc32((void *)&old, 28)) {
+		memset(ctrl, 0, sizeof(*ctrl));
+		ctrl->magic = BOOT_CTRL_MAGIC;
+		ctrl->version = BOOT_CTRL_VERSION;
+		ctrl->nb_slot = 2;
+		for (i = 0; i < 2; i++) {
+			if (old.slots[i].priority > AVB_AB_MAX_PRIORITY ||
+			    old.slots[i].tries_remaining > AVB_AB_MAX_TRIES_REMAINING)
+				return -EINVAL;
+			ctrl->slot_info[i].priority = old.slots[i].priority;
+			ctrl->slot_info[i].tries_remaining = old.slots[i].tries_remaining;
+			ctrl->slot_info[i].successful_boot = !!old.slots[i].successful_boot;
+		}
+		puts("X4: using legacy AVB slot metadata without rewriting it\n");
+		return 0;
+	}
+
+	/* First boot with missing/corrupt metadata: default to A in RAM only.
+	 * Persist repaired metadata only when actually attempting an OS boot.
+	 */
+	memset(ctrl, 0, sizeof(*ctrl));
+	memcpy(ctrl->slot_suffix, "_a", 3);
+	ctrl->magic = BOOT_CTRL_MAGIC;
+	ctrl->version = BOOT_CTRL_VERSION;
+	ctrl->nb_slot = 2;
+	ctrl->slot_info[0].priority = 15;
+	ctrl->slot_info[0].tries_remaining = 7;
+	puts("X4: invalid slot metadata; default A in RAM, no metadata write\n");
+	return 0;
+}
+
+static int x4_choose_slot(const bootloader_control *ctrl)
+{
+	int i, best = -1;
+
+	for (i = 0; i < 2; i++) {
+		const slot_metadata *slot = &ctrl->slot_info[i];
+
+		if (!slot->priority || slot->verity_corrupted ||
+		    (!slot->successful_boot && !slot->tries_remaining))
+			continue;
+		if (best < 0 || slot->priority > ctrl->slot_info[best].priority ||
+		    (slot->priority == ctrl->slot_info[best].priority &&
+		     ctrl->slot_suffix[0] == '_' && ctrl->slot_suffix[1] == 'a' + i))
+			best = i;
+	}
+	return best;
+}
+
+static int x4_get_valid_slot(void)
+{
+	char miscbuf[MISCBUF_SIZE];
+	bootloader_control ctrl;
+	int slot;
+
+	env_set("partition_mode", dynamic_partition ? "dynamic" : "normal");
+	env_set("gpt_mode", gpt_partition ? "true" : "false");
+	env_set("vendor_boot_mode", vendor_boot_partition ? "true" : "false");
+	if (!has_boot_slot) {
+		env_set("active_slot", "normal");
+		env_set("boot_part", "boot");
+		env_set("vendor_boot_part", "vendor_boot");
+		env_set("recovery_part", "recovery");
+		env_set("slot-suffixes", "-1");
+		return 0;
+	}
+	if (x4_load_boot_control(&ctrl, miscbuf))
+		return CMD_RET_FAILURE;
+	slot = x4_choose_slot(&ctrl);
+	if (slot < 0) {
+		puts("X4: both slots unbootable; recovery required\n");
+		return CMD_RET_FAILURE;
+	}
+	env_set("active_slot", slot ? "_b" : "_a");
+	env_set("boot_part", slot ? "boot_b" : "boot_a");
+	env_set("vendor_boot_part", slot ? "vendor_boot_b" : "vendor_boot_a");
+	env_set("recovery_part", slot ? "recovery_b" : "recovery_a");
+	env_set("slot-suffixes", slot ? "1" : "0");
+	env_set("rollback_flag", ctrl.roll_flag ? "1" : "0");
+	printf("X4: selected slot %c; no bootloader copy or misc write\n", 'a' + slot);
+	return 0;
+}
+
+static int x4_update_tries(void)
+{
+	char miscbuf[MISCBUF_SIZE];
+	bootloader_control ctrl;
+	const char *active = env_get("active_slot");
+	int slot;
+
+	if (!has_boot_slot)
+		return 0;
+	if (!active || (strcmp(active, "_a") && strcmp(active, "_b")))
+		return CMD_RET_FAILURE;
+	if (x4_load_boot_control(&ctrl, miscbuf))
+		return CMD_RET_FAILURE;
+	slot = !strcmp(active, "_b");
+	if (!ctrl.slot_info[slot].priority || ctrl.slot_info[slot].verity_corrupted)
+		return CMD_RET_FAILURE;
+	if (ctrl.slot_info[slot].successful_boot)
+		return 0;
+	if (!ctrl.slot_info[slot].tries_remaining)
+		return CMD_RET_FAILURE;
+	ctrl.slot_info[slot].tries_remaining--;
+	memcpy(ctrl.slot_suffix, slot ? "_b" : "_a", 3);
+	ctrl.crc32_le = cpu_to_le32(vab_crc32((void *)&ctrl, 28));
+	memcpy(miscbuf + AB_METADATA_MISC_PARTITION_OFFSET, &ctrl, sizeof(ctrl));
+	return store_write("misc", 0, MISCBUF_SIZE, miscbuf) ? CMD_RET_FAILURE : 0;
+}
+
+static int x4_set_active_slot(const char *name)
+{
+	char miscbuf[MISCBUF_SIZE];
+	bootloader_control ctrl;
+	int slot;
+
+	if (!has_boot_slot || (strcmp(name, "a") && strcmp(name, "b")))
+		return CMD_RET_FAILURE;
+	if (x4_load_boot_control(&ctrl, miscbuf))
+		return CMD_RET_FAILURE;
+	slot = !strcmp(name, "b");
+	if (ctrl.slot_info[1 - slot].priority >= 15)
+		ctrl.slot_info[1 - slot].priority = 14;
+	ctrl.slot_info[slot].priority = 15;
+	ctrl.slot_info[slot].tries_remaining = 7;
+	ctrl.slot_info[slot].successful_boot = 0;
+	ctrl.slot_info[slot].verity_corrupted = 0;
+	memcpy(ctrl.slot_suffix, slot ? "_b" : "_a", 3);
+	ctrl.crc32_le = cpu_to_le32(vab_crc32((void *)&ctrl, 28));
+	memcpy(miscbuf + AB_METADATA_MISC_PARTITION_OFFSET, &ctrl, sizeof(ctrl));
+	if (store_write("misc", 0, MISCBUF_SIZE, miscbuf))
+		return CMD_RET_FAILURE;
+	return x4_get_valid_slot();
+}
+
+#endif
+
 static int do_GetValidSlot(
 	cmd_tbl_t *cmdtp,
 	int flag,
 	int argc,
 	char * const argv[])
 {
+#ifdef CONFIG_SC2_X4
+	if (argc != 1)
+		return cmd_usage(cmdtp);
+	return x4_get_valid_slot();
+#else
 	char miscbuf[MISCBUF_SIZE] = {0};
 	bootloader_control boot_ctrl;
 	AvbABData info;
@@ -717,6 +879,7 @@ static int do_GetValidSlot(
 	}
 
 	return 0;
+#endif
 }
 
 static int do_SetActiveSlot(
@@ -725,6 +888,11 @@ static int do_SetActiveSlot(
 	int argc,
 	char * const argv[])
 {
+#ifdef CONFIG_SC2_X4
+	if (argc != 2)
+		return cmd_usage(cmdtp);
+	return x4_set_active_slot(argv[1]);
+#else
 	char miscbuf[MISCBUF_SIZE] = {0};
 	bootloader_control info;
 
@@ -779,6 +947,7 @@ static int do_SetActiveSlot(
 	}
 
 	return 0;
+#endif
 }
 
 static int do_SetRollFlag
@@ -824,6 +993,11 @@ static int do_SetUpdateTries(
 	int argc,
 	char * const argv[])
 {
+#ifdef CONFIG_SC2_X4
+	if (argc != 1)
+		return cmd_usage(cmdtp);
+	return x4_update_tries();
+#else
 	char miscbuf[MISCBUF_SIZE] = {0};
 	bootloader_control boot_ctrl;
 	bool bootable_a, bootable_b;
@@ -896,6 +1070,7 @@ static int do_SetUpdateTries(
 		}
 	}
 	return 0;
+#endif
 }
 
 static int do_CopySlot(

@@ -90,6 +90,12 @@ static const struct {
 		.command = "reboot-fastboot",
 		.dispatch = reboot_fastboot
 	},
+#ifdef CONFIG_SC2_X4
+	[FASTBOOT_COMMAND_REBOOT_RECOVERY] = {
+		.command = "reboot-recovery",
+		.dispatch = okay
+	},
+#endif
 	[FASTBOOT_COMMAND_REBOOT] =  {
 		.command = "reboot",
 		.dispatch = okay
@@ -172,6 +178,18 @@ int fastboot_handle_command(char *cmd_string, char *response)
 	for (i = 0; i < FASTBOOT_COMMAND_COUNT; i++) {
 		if (!strcmp_l1(commands[i].command, cmd_string)) {
 			if (commands[i].dispatch) {
+#ifdef CONFIG_SC2_X4
+				/* AOSP sends reboot:recovery; select its USB completion. */
+				if (i == FASTBOOT_COMMAND_REBOOT && cmd_parameter &&
+				    *cmd_parameter) {
+					if (strcmp(cmd_parameter, "recovery")) {
+						fastboot_fail("unsupported reboot target", response);
+						return -1;
+					}
+					okay(NULL, response);
+					return FASTBOOT_COMMAND_REBOOT_RECOVERY;
+				}
+#endif
 				if (strcmp(cmd_parameter, NULL)) {
 					commands[i].dispatch(cmd_parameter,
 							response);

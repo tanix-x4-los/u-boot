@@ -2943,7 +2943,8 @@ int mmc_pattern_check(struct mmc *mmc, struct aml_pattern *table)
 
 int mmc_init(struct mmc *mmc)
 {
-	int err = 0, i;
+	int err = 0;
+	__maybe_unused int i;
 	__maybe_unused ulong start;
 #if CONFIG_IS_ENABLED(DM_MMC)
 	struct mmc_uclass_priv *upriv = dev_get_uclass_priv(mmc->dev);
@@ -2969,8 +2970,10 @@ int mmc_init(struct mmc *mmc)
 			if (mmc_device_init(mmc) == 0) {
 				is_partition_checked = true;
 				printf("eMMC/TSD partition table have been checked OK!\n");
+#ifndef CONFIG_SC2_X4
 				for (i = 0; i < ARRAY_SIZE(aml_pattern_table); i++)
 					mmc_pattern_check(mmc, &aml_pattern_table[i]);
+#endif
 			}
 		}
 	}

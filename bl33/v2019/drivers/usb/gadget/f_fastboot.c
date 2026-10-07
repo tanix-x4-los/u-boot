@@ -402,8 +402,25 @@ static void compl_do_reset(struct usb_ep *ep, struct usb_request *req)
 #ifndef CONFIG_USB_GADGET_CRG
 	f_dwc_otg_pullup(0);
 #endif
+#ifdef CONFIG_SC2_X4
+	/* Clear the Amlogic fastboot reason before a normal reboot. */
+	run_command("reboot normal", 0);
+#else
 	do_reset(NULL, 0, 0, NULL);
+#endif
 }
+
+#ifdef CONFIG_SC2_X4
+static void compl_do_reboot_recovery(struct usb_ep *ep, struct usb_request *req)
+{
+#ifndef CONFIG_USB_GADGET_CRG
+	f_dwc_otg_pullup(0);
+#endif
+	/* Set the Amlogic recovery reason rather than doing a plain reset. */
+	run_command("reboot recovery", 0);
+}
+
+#endif
 
 static void compl_do_reboot_bootloader(struct usb_ep *ep, struct usb_request *req)
 {
@@ -595,6 +612,11 @@ static void rx_handler_command(struct usb_ep *ep, struct usb_request *req)
 			fastboot_func->in_req->complete = do_exit_on_complete;
 			break;
 
+#ifdef CONFIG_SC2_X4
+		case FASTBOOT_COMMAND_REBOOT_RECOVERY:
+			fastboot_func->in_req->complete = compl_do_reboot_recovery;
+			break;
+#endif
 		case FASTBOOT_COMMAND_REBOOT:
 			fastboot_func->in_req->complete = compl_do_reset;
 			break;
