@@ -3,7 +3,7 @@
 from pathlib import Path
 import subprocess
 import tempfile
-s = (Path(__file__).parent / 'bl33/v2019/board/amlogic/sc2_x4/sc2_x4.c').read_text()
+s = (Path(__file__).parent / 'bl33/v2019/board/amlogic/sc2_x4/gpt.c').read_text()
 def function(start):
     pos=s.index(start); opening=s.index('{',pos); end=opening+1; depth=1
     while depth:
@@ -26,7 +26,7 @@ typedef uint32_t u32; typedef uint64_t lbaint_t; typedef int cmd_tbl_t;
 #define GPT_ENTRY_NUMBERS 128
 #define CONFIG_IS_ENABLED(x) 1
 #define ALLOC_CACHE_ALIGN_BUFFER_PAD(t,n,a,b) t n[a]
-typedef int gpt_header; typedef int gpt_entry;
+typedef struct {char bytes[512];} gpt_header; typedef int gpt_entry;
 struct mmc {int dummy;};
 struct blk_desc {uint64_t lba; unsigned blksz,hwpart;};
 struct partitions {char name[16]; uint64_t offset,size;};
@@ -34,26 +34,33 @@ typedef struct {uint64_t start,size; unsigned blksz; char name[32],uuid[40];} di
 static struct mmc mmc;
 static struct blk_desc disk;
 static struct partitions map[4];
-static int count,valid,writes,nparts;
+static int count,valid,writes,nparts,corrupt,read_error,write_error,readback_error;
 static u32 status;
 static disk_partition_t published[4];
 static u32 readl(int x) {return status;}
+static int x4_usb_ram_boot(void) {return ((status >> 4) & 15) == 5;}
+static int blk_dread(struct blk_desc *d,int l,int n,void *b) {
+ memset(b,0,512); if(corrupt) memcpy(b,"EFI PART",8); return read_error ? 0 : 1;
+}
+static void part_init(struct blk_desc *d) {}
 static struct mmc *find_mmc_device(int n) {return &mmc;}
 static int mmc_init(struct mmc *m) {return 0;}
 static struct blk_desc *mmc_get_blk_desc(struct mmc *m) {return &disk;}
 static int is_gpt_valid(struct blk_desc *d,int l,gpt_header *h,gpt_entry **e) {return valid;}
 static struct partitions *aml_ept_table(int *n) {*n=count;return map;}
 static int x4_write_primary_gpt(struct blk_desc *d,disk_partition_t *p,int n) {
- writes++; nparts=n; memcpy(published,p,n*sizeof(*p)); return 0;
+ writes++; nparts=n; memcpy(published,p,n*sizeof(*p)); valid=!readback_error; return write_error;
 }
 """
 code += function('static void x4_part_uuid(')+'\n'
 code += function('static int x4_publish_gpt(')+'\n'
+code += function('int x4_migrate_gpt(')+'\n'
 code += function('static int do_x4_gpt(')+'\n'
 code += r"""
 static char *args[]={"x4_gpt","publish"};
 static void reset(void) {
  memset(map,0,sizeof(map)); count=3; valid=writes=0;
+ corrupt=read_error=write_error=readback_error=0;
  disk=(struct blk_desc){61079552,512,0}; status=0x1011;
  strcpy(map[0].name,"bootloader"); map[0].size=4*1024*1024;
  strcpy(map[1].name,"misc"); map[1].offset=64*1024*1024; map[1].size=1024*1024;
@@ -79,6 +86,14 @@ int main(void) {
  reset(); map[2].size=UINT64_MAX-511; rejected();
  reset(); strcpy(map[0].name,"misc"); rejected();
  reset(); count=129; rejected();
+ reset(); assert(x4_migrate_gpt()==0 && writes==1);
+ assert(x4_migrate_gpt()==0 && writes==1); /* existing GPT untouched */
+ reset(); status=0x850; assert(x4_migrate_gpt()==0 && writes==0);
+ reset(); status=0x1010; assert(x4_migrate_gpt()==1 && writes==0);
+ reset(); corrupt=1; assert(x4_migrate_gpt()==1 && writes==0);
+ reset(); read_error=1; assert(x4_migrate_gpt()==1 && writes==0);
+ reset(); write_error=1; assert(x4_migrate_gpt()==1);
+ reset(); readback_error=1; assert(x4_migrate_gpt()==1);
  puts("PASS: GPT map validation, preserved extents, existing GPT and hardware boot gate");
 }
 """

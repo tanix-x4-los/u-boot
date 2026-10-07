@@ -42,6 +42,7 @@ static int disconnects;
 static char last_command[64];
 static void f_dwc_otg_pullup(int v) { assert(v == 0); disconnects++; }
 static int run_command(const char *c,int v) { strcpy(last_command,c); return 0; }
+static int do_reset(void *a,int b,int c,void *d) { strcpy(last_command,"original reset"); return 0; }
 '''
 code += enum + '\n' + table + '\n'
 code += function(s,'static int strcmp_l1(') + '\n'
@@ -72,3 +73,22 @@ with tempfile.TemporaryDirectory() as tmp:
     c=Path(tmp)/'reboot.c'; c.write_text(code)
     subprocess.run(['cc','-std=gnu11','-Wno-nonnull',str(c),'-o',str(Path(tmp)/'reboot')],check=True)
     subprocess.run([str(Path(tmp)/'reboot')],check=True)
+
+# Compile the same command table/dispatcher without X4 and verify donor behavior.
+non_x4 = code.replace('#define CONFIG_SC2_X4 1', '')
+start = non_x4.index('int main(void) {')
+non_x4 = non_x4[:start] + r'''
+int main(void) {
+ check("reboot:recovery",FASTBOOT_COMMAND_REBOOT,"OKAY");
+ check("reboot",FASTBOOT_COMMAND_REBOOT,"OKAY");
+ check("reboot-bootloader",FASTBOOT_COMMAND_REBOOT_BOOTLOADER,"OKAY");
+ compl_do_reset(NULL,NULL);
+ assert(disconnects == 1 && !strcmp(last_command,"original reset"));
+ puts("PASS: non-X4 fastboot dispatch and original reset behavior preserved");
+}
+'''
+with tempfile.TemporaryDirectory() as tmp:
+    c=Path(tmp)/'donor.c'; c.write_text(non_x4)
+    exe=Path(tmp)/'donor'
+    subprocess.run(['cc','-std=gnu11','-Wno-nonnull',str(c),'-o',str(exe)],check=True)
+    subprocess.run([str(exe)],check=True)

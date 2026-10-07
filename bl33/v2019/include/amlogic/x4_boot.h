@@ -4,6 +4,8 @@
 #include <asm/io.h>
 #include <asm/arch/secure_apb.h>
 #include <asm/arch/romboot.h>
+int x4_migrate_gpt(void);
+
 /* SC2 ROM boot source, as used by the vendor ADNL implementation. */
 static inline bool x4_usb_ram_boot(void)
 {
