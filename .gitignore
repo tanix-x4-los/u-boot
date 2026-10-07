@@ -1,0 +1,5 @@
+# Generated X4 build outputs.
+/build-x4.log
+/bl30/src_ao/bl30.bin
+/bl30/src_ao/demos/amlogic/n200/sc2/sc2_ah212/gcc/
+/build-production.log
