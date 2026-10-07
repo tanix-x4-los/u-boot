@@ -5,6 +5,7 @@
 
 #include <common.h>
 #include <command.h>
+#include <amlogic/x4_boot.h>
 #include <mmc.h>
 #include <part.h>
 #include <u-boot/crc.h>
@@ -194,6 +195,10 @@ int board_late_init(void)
 	env_set("recovery_mode", "false");
 	env_set("vout_init", "disable");
 
+	if (x4_migrate_gpt()) {
+		puts("X4: GPT migration failed; entering fastboot\n");
+		env_set("bootcmd", "run enter_fastboot");
+	}
 
 	run_command("get_avb_mode", 0);
 	if (run_command("get_valid_slot", 0)) {
