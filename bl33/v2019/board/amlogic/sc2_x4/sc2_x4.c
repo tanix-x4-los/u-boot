@@ -170,7 +170,7 @@ int board_late_init(void)
 	 */
 	char *boot_vars[] = {
 		"board", "bootcmd", "bootdelay", "preboot", "initargs", "storeboot",
-		"usb_burning",
+		"usb_burning", "upgrade_key",
 		"bcb_cmd", "bcb_cmd_base", "storeargs", "storeargs_base",
 		"switch_bootmode", "update", "update_base", "enter_fastboot",
 		"common_dtb_load", "loadaddr_kernel", "dtb_mem_addr",

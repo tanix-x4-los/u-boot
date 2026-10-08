@@ -184,11 +184,14 @@
 			"run cmdline_keys_base;"\
 			"\0"\
 		"upgrade_key="\
-			"echo skip upgrade_key;"\
+			"if gpio input GPIOD_3; then "\
+				"echo AV button pressed: entering ADNL; adnl;"\
+			"fi;"\
 			"\0"\
 
 #if 1
 #define CONFIG_PREBOOT  \
+            "run upgrade_key;"\
             "setenv lock 10100000;"\
             "if rpmb_state; then "\
                 "echo RPMB auth key programmed: ${rpmb_state};"\
