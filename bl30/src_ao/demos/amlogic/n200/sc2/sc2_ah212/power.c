@@ -54,6 +54,7 @@ static IRPowerKey_t prvPowerKeyList[] = {
 	{ 0xde217788, IR_NORMAL},
 	{ 0x3ac5bd02, IR_CUSTOM},
 	{ 0x9c637788, IR_CUSTOM},
+	{ 0xb24d4040, IR_NORMAL},
 	{}
         /* add more */
 };
