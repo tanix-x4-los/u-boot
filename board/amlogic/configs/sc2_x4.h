@@ -170,8 +170,10 @@
 			"run cmdline_keys_base;"\
 			"\0"\
 		"upgrade_key="\
-			"run upgrade_key_base;"\
-			"echo usr key;"\
+			"if gpio input GPIOD_3; then "\
+				"echo AV button pressed, entering ADNL;"\
+				"adnl;"\
+			"fi;"\
 			"\0"\
 
 #if 1
