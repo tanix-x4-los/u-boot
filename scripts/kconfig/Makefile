@@ -125,11 +125,10 @@ endif
 endif
 
 %_defconfig: $(obj)/conf
-ifeq ($(wildcard arch/$(SRCARCH)/configs/$@),)
-	$(Q)$< $(silent) --defconfig=board/khadas/defconfigs/$@ $(Kconfig)
-else
-	$(Q)$< $(silent) --defconfig=arch/$(SRCARCH)/configs/$@ $(Kconfig)
-endif
+	$(Q)$< $(silent) --defconfig=$(patsubst $(srctree)/%,%,$(firstword \
+		$(wildcard $(srctree)/arch/$(SRCARCH)/configs/$@ \
+			   $(srctree)/board/khadas/defconfigs/$@) \
+		board/amlogic/defconfigs/$@)) $(Kconfig)
 
 # Added for U-Boot (backward compatibility)
 %_config: %_defconfig
