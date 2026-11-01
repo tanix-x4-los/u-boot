@@ -291,7 +291,53 @@ config TARGET_KHADAS_VIM1S
 
 endif
 
+if MESON_SC2
+
+config SYS_SOC
+	default "sc2"
+
+config DDRFW_TYPE
+	string "SC2 DDR FW Type"
+	default "ddr4"
+
+config CHIPSET_NAME
+	string "SC2 CHIPSET NAME"
+	default "s905x4"
+
+config CHIPSET_VARIANT
+	string "SC2 CHIPSET VARIANT"
+	default ""
+
+config AMLOGIC_KEY_TYPE
+	string "SC2 AMLOGIC KEY TYPE"
+	default "dev-keys"
+
+config BL30_SELECT
+	string "SC2 BL30 board config"
+	default "sc2_ah212"
+
+choice
+	prompt "SC2 Board"
+
+config SC2_X4
+	bool "Tanix X4"
+	select TARGET_SC2_X4
+	help
+	  Select Tanix X4 config
+
+endchoice
+
+config TARGET_SC2_X4
+	bool "Tanix X4 board"
+	depends on SC2_X4
+
+endif
+
 # Khadas boards
 
 source "board/khadas/kvim4/Kconfig"
 source "board/khadas/kvim1s/Kconfig"
+
+# Other boards
+
+source "board/amlogic/sc2_x4/Kconfig"
